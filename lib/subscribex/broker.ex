@@ -30,15 +30,15 @@ defmodule Subscribex.Broker do
   require Logger
   import Supervisor.Spec
 
-  @type channel         :: %AMQP.Channel{}
+  @type channel :: %AMQP.Channel{}
 
   @type callback_return :: term
-  @type callback        :: (... -> callback_return)
-  @type delivery_tag  :: term
+  @type callback :: (... -> callback_return)
+  @type delivery_tag :: term
 
-  @type routing_key     :: String.t
-  @type exchange        :: String.t
-  @type payload         :: String.t
+  @type routing_key :: String.t()
+  @type exchange :: String.t()
+  @type payload :: String.t()
 
   @type t :: module
 
@@ -52,16 +52,19 @@ defmodule Subscribex.Broker do
       require Logger
       import Subscribex.Broker
 
-      @type monitor         :: reference
+      @type monitor :: reference
 
       @type callback_return :: term
-      @type callback        :: (... -> callback_return)
+      @type callback :: (... -> callback_return)
 
       otp_app = Keyword.fetch!(opts, :otp_app)
       @otp_app otp_app
 
       defdelegate close(channel), to: AMQP.Channel
-      defdelegate publish(channel, exchange, routing_key, payload, options \\ []), to: Subscribex.Broker
+
+      defdelegate publish(channel, exchange, routing_key, payload, options \\ []),
+        to: Subscribex.Broker
+
       defdelegate ack(channel, delivery_tag), to: AMQP.Basic
       defdelegate reject(channel, delivery_tag, options), to: AMQP.Basic
 
@@ -96,18 +99,21 @@ defmodule Subscribex.Broker do
       @spec config!(atom()) :: any
       def config!(key) do
         case Keyword.fetch(config(), key) do
-          {:ok, value} -> value
+          {:ok, value} ->
+            value
+
           _ ->
-            raise ArgumentError, "missing #{inspect key} configuration in " <>
-                           "config #{inspect @otp_app}, #{inspect __MODULE__}"
+            raise ArgumentError,
+                  "missing #{inspect(key)} configuration in " <>
+                    "config #{inspect(@otp_app)}, #{inspect(__MODULE__)}"
         end
       end
 
-      @spec channel(:link | :no_link | :monitor | fun())
-      :: %AMQP.Channel{} | {%AMQP.Channel{}, monitor} | any
+      @spec channel(:link | :no_link | :monitor | fun()) ::
+              %AMQP.Channel{} | {%AMQP.Channel{}, monitor} | any
       def channel(link) when is_atom(link) do
         __MODULE__.Connection
-        |> Process.whereis
+        |> Process.whereis()
         |> do_channel(link, __MODULE__)
       end
 
@@ -124,9 +130,9 @@ defmodule Subscribex.Broker do
 
       @spec channel(module, atom, [any]) :: any
       def channel(module, function, args)
-      when is_atom(module)
-      and is_atom(function)
-      and is_list(args) do
+          when is_atom(module) and
+                 is_atom(function) and
+                 is_list(args) do
         channel = channel(:link)
         args = [channel | args]
         result = apply(module, function, args)
@@ -137,7 +143,7 @@ defmodule Subscribex.Broker do
     end
   end
 
-  @spec publish(channel, String.t, String.t, binary, keyword) :: :ok | :blocked | :closing
+  @spec publish(channel, String.t(), String.t(), binary, keyword) :: :ok | :blocked | :closing
   def publish(channel, exchange, routing_key, payload, options \\ [])
 
   def publish(channel, exchange, routing_key, payload, options) when is_binary(payload) do
@@ -148,7 +154,7 @@ defmodule Subscribex.Broker do
     raise InvalidPayloadException, "Payload must be a binary"
   end
 
-  @spec sanitize_host(String.t | Keyword.t) :: Keyword.t
+  @spec sanitize_host(String.t() | Keyword.t()) :: Keyword.t()
   def sanitize_host(host) when is_binary(host), do: host
 
   def sanitize_host(credentials) when is_list(credentials) do
@@ -160,7 +166,8 @@ defmodule Subscribex.Broker do
     sanitize_host(username, password, host, port)
   end
 
-  @spec sanitize_host(String.t, String.t, String.t | charlist(), String.t | integer) :: Keyword.t
+  @spec sanitize_host(String.t(), String.t(), String.t() | charlist(), String.t() | integer) ::
+          Keyword.t()
   def sanitize_host(username, password, host, port) when is_binary(host) do
     sanitize_host(username, password, to_charlist(host), port)
   end
@@ -170,10 +177,7 @@ defmodule Subscribex.Broker do
   end
 
   def sanitize_host(username, password, host, port) do
-    [username: username,
-     password: password,
-     host: host,
-     port: port]
+    [username: username, password: password, host: host, port: port]
   end
 
   def subscriber_spec(subscriber) when is_atom(subscriber) do
@@ -183,6 +187,7 @@ defmodule Subscribex.Broker do
       id: Module.concat(subscriber, Supervisor)
     )
   end
+
   def subscriber_spec({count, subscriber}) do
     supervisor(
       Subscribex.Subscriber.Supervisor,
@@ -205,7 +210,7 @@ defmodule Subscribex.Broker do
 
   def do_channel(nil, link, module) do
     Logger.warn("Subscriber application not started, trying reconnect...")
-    IO.inspect(module, label: "doing channel for module")
+    Logger.debug("doing channel for module: #{inspect(module)}")
 
     interval = apply(module, :config, [:reconnect_interval, :timer.seconds(30)])
     :timer.sleep(interval)
@@ -214,16 +219,19 @@ defmodule Subscribex.Broker do
   end
 
   def do_channel(connection_pid, link, module) when is_pid(connection_pid) do
-    IO.inspect(module, label: "doing channel for module")
+    Logger.debug("doing channel for module: #{inspect(module)}")
     connection = %AMQP.Connection{pid: connection_pid}
 
     Logger.debug("Attempting to create channel")
+
     {:ok, channel} =
       case AMQP.Channel.open(connection) do
         {:ok, channel} ->
           Logger.debug("Channel created")
           {:ok, channel}
-        _ -> apply(module, :channel, [link])
+
+        _ ->
+          apply(module, :channel, [link])
       end
 
     apply_link(channel, link)
